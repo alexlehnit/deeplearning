@@ -6,14 +6,22 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 import random
 import numpy as np
+import argparse
 
-# Setzen von festen varibabeln
-DATEN = "daten/mini"
-MODELL = "vit_base_patch16_224.augreg2_in21k_ft_in1k"
-EPOCHEN = 3
-LR = 1e-3
 
-#GPU Support
+# Argumente für Terminal Aufruf des Python Scripts
+def argumente():
+    p = argparse.ArgumentParser(description="ViT/ResNet auf eigenem Datensatz trainieren")
+    p.add_argument("--daten", default="daten/mini")
+    p.add_argument("--modell", default="vit_base_patch16_224.augreg2_in21k_ft_in1k")
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--epochen", type=int, default=3)
+    p.add_argument("--batch", type=int, default=32)
+    p.add_argument("--seed", type=int, default=42)
+    return p.parse_args()
+
+
+#GPU Support / GPU Setzen
 def waehle_geraet():
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -28,52 +36,69 @@ def setze_seed(seed):
     torch.manual_seed(seed)
 
 
-geraet = waehle_geraet()
-setze_seed(42)
-print("Gerät:", geraet)
+# 1. Daten laden
+def lade_daten(pfad, batch, seed):
+    tf = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),   # Werte dieses ViT
+    ])
+    ds = datasets.ImageFolder(pfad, transform=tf)                 # ein Ordner pro Klasse
+    n_test = len(ds) // 5                                          # 20 % zum Testen
+    train_ds, test_ds = random_split(ds, [len(ds) - n_test, n_test],
+                                     generator=torch.Generator().manual_seed(seed))
+    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=batch)
+    return train_loader, test_loader, len(ds.classes)
 
-
-# 1. Daten laden 
-tf = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),   # Werte dieses ViT
-])
-ds = datasets.ImageFolder(DATEN, transform=tf)                # ein Ordner pro Klasse
-n_test = len(ds) // 5                                          # 20 % zum Testen
-train_ds, test_ds = random_split(ds, [len(ds) - n_test, n_test],
-                                 generator=torch.Generator().manual_seed(42))
-train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_ds, batch_size=32)
 
 # 2. Modell: vortrainiert, neuer Kopf, nur der Kopf lernt (Linear Probing)
-modell = timm.create_model(MODELL, pretrained=True, num_classes=len(ds.classes)).to(geraet)
-for p in modell.parameters():
-    p.requires_grad = False
-for p in modell.get_classifier().parameters():
-    p.requires_grad = True
+def baue_modell(name, anzahl_klassen, geraet):
+    modell = timm.create_model(name, pretrained=True, num_classes=anzahl_klassen).to(geraet)
+    for p in modell.parameters():
+        p.requires_grad = False
+    for p in modell.get_classifier().parameters():
+        p.requires_grad = True
+    return modell
 
-# 3. Loss und Optimizer 
-verlust_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam([p for p in modell.parameters() if p.requires_grad], lr=LR)
 
-# 4. Training 
-for epoche in range(EPOCHEN):
-    modell.train()
-    for bilder, y in train_loader:
-        bilder, y = bilder.to(geraet), y.to(geraet)   # neu
-        logits = modell(bilder)            # vorwärts
-        verlust = verlust_fn(logits, y)    # Fehler
-        optimizer.zero_grad()              # alte Gradienten löschen
-        verlust.backward()                 # Backpropagation
-        optimizer.step()                   # Gewichte anpassen
-    print(f"Epoche {epoche + 1}: letzter Loss {verlust.item():.4f}")
+# 3. + 4. Loss, Optimizer und Training
+def trainiere(modell, train_loader, geraet, epochen, lr):
+    verlust_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam([p for p in modell.parameters() if p.requires_grad], lr=lr)
+    for epoche in range(epochen):
+        modell.train()
+        for bilder, y in train_loader:
+            bilder, y = bilder.to(geraet), y.to(geraet)
+            logits = modell(bilder)            # vorwärts
+            verlust = verlust_fn(logits, y)    # Fehler
+            optimizer.zero_grad()              # alte Gradienten löschen
+            verlust.backward()                 # Backpropagation
+            optimizer.step()                   # Gewichte anpassen
+        print(f"Epoche {epoche + 1}: letzter Loss {verlust.item():.4f}")
 
-# 5. Test 
-modell.eval()
-richtig = 0
-with torch.no_grad():
-    for bilder, y in test_loader:
-        bilder, y = bilder.to(geraet), y.to(geraet)
-        richtig += (modell(bilder).argmax(1) == y).sum().item()
-print(f"Test-Accuracy: {richtig / len(test_ds):.3f}")
+
+# 5. Test
+def teste(modell, test_loader, geraet):
+    modell.eval()
+    richtig = 0
+    with torch.no_grad():
+        for bilder, y in test_loader:
+            bilder, y = bilder.to(geraet), y.to(geraet)
+            richtig += (modell(bilder).argmax(1) == y).sum().item()
+    return richtig / len(test_loader.dataset)
+
+
+def main():
+    args = argumente()
+    geraet = waehle_geraet()
+    setze_seed(args.seed)
+    print("Gerät:", geraet)
+    train_loader, test_loader, anzahl_klassen = lade_daten(args.daten, args.batch, args.seed)
+    modell = baue_modell(args.modell, anzahl_klassen, geraet)
+    trainiere(modell, train_loader, geraet, args.epochen, args.lr)
+    print(f"Test-Accuracy: {teste(modell, test_loader, geraet):.3f}")
+
+
+if __name__ == "__main__":
+    main()
