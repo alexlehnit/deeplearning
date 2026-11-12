@@ -1,0 +1,7 @@
+# Pakete für train_eigen.py
+torch>=2.1          # Training, Autograd, MPS auf dem Mac
+torchvision>=0.16   # ImageFolder und transforms
+timm>=0.9           # vortrainierte ViT- und ResNet-Modelle
+numpy>=1.24         # Seed (Upgrade 1)
+scikit-learn>=1.3   # Accuracy und Macro-F1 (Upgrade 5)
+tensorboard>=2.14   # Kurven (Upgrade 8)
