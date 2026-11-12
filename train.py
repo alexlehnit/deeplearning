@@ -44,12 +44,14 @@ def lade_daten(pfad, batch, seed):
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),   # Werte dieses ViT
     ])
     ds = datasets.ImageFolder(pfad, transform=tf)                 # ein Ordner pro Klasse
-    n_test = len(ds) // 5                                          # 20 % zum Testen
-    train_ds, test_ds = random_split(ds, [len(ds) - n_test, n_test],
-                                     generator=torch.Generator().manual_seed(seed))
+    n_val = n_test = int(len(ds) * 0.15)                           # 70/15/15
+    train_ds, val_ds, test_ds = random_split(
+        ds, [len(ds) - n_val - n_test, n_val, n_test],
+        generator=torch.Generator().manual_seed(seed))
     train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch)
     test_loader = DataLoader(test_ds, batch_size=batch)
-    return train_loader, test_loader, len(ds.classes)
+    return train_loader, val_loader, test_loader, len(ds.classes)
 
 
 # 2. Modell: vortrainiert, neuer Kopf, nur der Kopf lernt (Linear Probing)
@@ -63,7 +65,7 @@ def baue_modell(name, anzahl_klassen, geraet):
 
 
 # 3. + 4. Loss, Optimizer und Training
-def trainiere(modell, train_loader, geraet, epochen, lr):
+def trainiere(modell, train_loader, val_loader, geraet, epochen, lr):
     verlust_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam([p for p in modell.parameters() if p.requires_grad], lr=lr)
     for epoche in range(epochen):
@@ -75,18 +77,20 @@ def trainiere(modell, train_loader, geraet, epochen, lr):
             optimizer.zero_grad()              # alte Gradienten löschen
             verlust.backward()                 # Backpropagation
             optimizer.step()                   # Gewichte anpassen
-        print(f"Epoche {epoche + 1}: letzter Loss {verlust.item():.4f}")
+        val_acc = auswerten(modell, val_loader, geraet)
+        print(f"Epoche {epoche + 1}: Loss {verlust.item():.4f}, Val-Acc {val_acc:.3f}")
 
 
-# 5. Test
-def teste(modell, test_loader, geraet):
+# Auswertung (Training, Validierung, Test trennen)
+def auswerten(modell, loader, geraet):
     modell.eval()
-    richtig = 0
+    richtig, anzahl = 0, 0
     with torch.no_grad():
-        for bilder, y in test_loader:
+        for bilder, y in loader:
             bilder, y = bilder.to(geraet), y.to(geraet)
             richtig += (modell(bilder).argmax(1) == y).sum().item()
-    return richtig / len(test_loader.dataset)
+            anzahl += len(y)
+    return richtig / anzahl
 
 
 def main():
@@ -94,10 +98,10 @@ def main():
     geraet = waehle_geraet()
     setze_seed(args.seed)
     print("Gerät:", geraet)
-    train_loader, test_loader, anzahl_klassen = lade_daten(args.daten, args.batch, args.seed)
+    train_loader, val_loader, test_loader, anzahl_klassen = lade_daten(args.daten, args.batch, args.seed)
     modell = baue_modell(args.modell, anzahl_klassen, geraet)
-    trainiere(modell, train_loader, geraet, args.epochen, args.lr)
-    print(f"Test-Accuracy: {teste(modell, test_loader, geraet):.3f}")
+    trainiere(modell, train_loader, val_loader, geraet, args.epochen, args.lr)
+    print(f"Test-Accuracy: {auswerten(modell, test_loader, geraet):.3f}")
 
 
 if __name__ == "__main__":
