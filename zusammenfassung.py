@@ -60,6 +60,27 @@ def main():
                            "Zeit (s)", "Latenz (ms)"],
                           [z for _, z in sorted(zeilen, key=lambda x: -x[0])]), ""]
 
+    # Station 2
+    if s2:
+        teacher_acc = float(s2[0]["teacher_test_acc"])
+        gruppen = gruppieren(s2, ["student", "kd", "alpha", "temperatur"])
+        ohne = {k[0]: mittel(g, "test_acc")[0] for k, g in gruppen.items() if k[1] == "nein"}
+        zeilen = []
+        for k, g in gruppen.items():
+            acc, acc_s = mittel(g, "test_acc")
+            luecke = ""
+            if k[1] == "ja" and k[0] in ohne and teacher_acc > ohne[k[0]]:
+                luecke = f"{100 * (acc - ohne[k[0]]) / (teacher_acc - ohne[k[0]]):.0f} %"
+            kd = "ohne KD" if k[1] == "nein" else f"KD α={k[2]}, T={k[3]}"
+            zeilen.append([k[0], kd, len(g), prozent(acc, acc_s), prozent(mittel(g, "test_f1")[0]),
+                           f"{int(g[0]['parameter']):,}", g[0]["groesse_mb"], g[0]["latenz_ms"], luecke])
+            vergleich.append(("Student (Station 2)", f"{k[0]} {kd}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"]))
+        teile += ["## Station 2: Compression", "",
+                  f"Teacher: `{s2[0]['teacher']}`, Test-Acc {prozent(teacher_acc)}, "
+                  f"{int(s2[0]['teacher_parameter']):,} Parameter, {s2[0]['teacher_latenz_ms']} ms pro Bild", "",
+                  tabelle(["Student", "Variante", "Seeds", "Test-Acc", "Macro-F1", "Parameter", "MB", "Latenz (ms)",
+                           "Lücke geschlossen"], zeilen), ""]
+
     # hier kommen in G7 und H6 die Blöcke für Station 2, Station 3 und den Vergleich hin
 
     text = "\n".join(teile)
