@@ -3,6 +3,9 @@ from pathlib import Path
 from torchvision.datasets.utils import download_url, extract_archive
 import os
 import shutil
+import json
+from collections import Counter
+from PIL import Image
 
 RESISC45_URL = ("https://hf.co/datasets/isaaccorley/resisc45/resolve/"
                 "883edc0eee77b2c84225472f10f126e3ed83fa6e/NWPU-RESISC45.zip")
@@ -27,3 +30,29 @@ def verlinken(quelle, ziel):
         os.link(quelle, ziel)
     except OSError:
         shutil.copy2(quelle, ziel)
+
+def main():
+    quelle = herunterladen("daten/roh")
+    klassen = sorted(d.name for d in quelle.iterdir() if d.is_dir())
+
+    ziel = Path("daten") / "resisc45"
+    if ziel.exists():
+        shutil.rmtree(ziel)
+    for klasse in klassen:
+        (ziel / klasse).mkdir(parents=True)
+        for p in sorted((quelle / klasse).glob("*.jpg")):
+            verlinken(p, ziel / klasse / p.name)
+
+    meta = {"datensatz": "resisc45", "klassennamen": {k: k.replace("_", " ") for k in klassen},
+            }
+    with open(ziel / "meta.json", "w") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+
+    zaehler = Counter(p.parent.name for p in ziel.glob("*/*.jpg"))
+    print(f"{sum(zaehler.values()):,} Bilder in {len(zaehler)} Klassen "
+          f"(min {min(zaehler.values())}, max {max(zaehler.values())})")
+    print("Bildgröße:", Image.open(next(ziel.glob("*/*.jpg"))).size)
+
+
+if __name__ == "__main__":
+    main()
