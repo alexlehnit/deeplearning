@@ -7,6 +7,8 @@ from torchvision import datasets, transforms
 import random
 import numpy as np
 import argparse
+from torch.utils.data import DataLoader
+from daten import lade_daten, transformationen
 
 
 # Argumente für Terminal Aufruf des Python Scripts
@@ -35,23 +37,6 @@ def setze_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-
-# 1. Daten laden
-def lade_daten(pfad, batch, seed):
-    tf = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),   # Werte dieses ViT
-    ])
-    ds = datasets.ImageFolder(pfad, transform=tf)                 # ein Ordner pro Klasse
-    n_val = n_test = int(len(ds) * 0.15)                           # 70/15/15
-    train_ds, val_ds, test_ds = random_split(
-        ds, [len(ds) - n_val - n_test, n_val, n_test],
-        generator=torch.Generator().manual_seed(seed))
-    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch)
-    test_loader = DataLoader(test_ds, batch_size=batch)
-    return train_loader, val_loader, test_loader, len(ds.classes)
 
 
 # 2. Modell: vortrainiert, neuer Kopf, nur der Kopf lernt (Linear Probing)
@@ -98,8 +83,12 @@ def main():
     geraet = waehle_geraet()
     setze_seed(args.seed)
     print("Gerät:", geraet)
-    train_loader, val_loader, test_loader, anzahl_klassen = lade_daten(args.daten, args.batch, args.seed)
-    modell = baue_modell(args.modell, anzahl_klassen, geraet)
+    train_tf, eval_tf = transformationen([0.5] * 3, [0.5] * 3)
+    train_ds, val_ds, test_ds, klassen = lade_daten(args.daten, train_tf, eval_tf)
+    train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=args.batch)
+    test_loader = DataLoader(test_ds, batch_size=args.batch)
+    modell = baue_modell(args.modell, len(klassen), geraet)
     trainiere(modell, train_loader, val_loader, geraet, args.epochen, args.lr)
     print(f"Test-Accuracy: {auswerten(modell, test_loader, geraet):.3f}")
 

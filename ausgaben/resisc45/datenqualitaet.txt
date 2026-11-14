@@ -1,0 +1,20 @@
+Bilder: 31,500 in 45 Klassen
+Bilder pro Klasse: min 700, max 700
+Bildgrößen: {(256, 256): 31500}
+Farbmodi: {'RGB': 31500}
+Defekte Dateien: 0
+Exakte Duplikate: 8 Gruppen, 8 überzählige Dateien
+Beinahe-Duplikate: 9 Gruppen
+Widersprüchliche Labels: 0 Gruppen
+Sehr kontrastarme Bilder: 9
+
+Beinahe-Duplikate (erste 30):
+  airport/airport_050.jpg | airport/airport_420.jpg
+  airport/airport_064.jpg | airport/airport_527.jpg
+  airport/airport_118.jpg | airport/airport_315.jpg
+  airport/airport_243.jpg | airport/airport_397.jpg
+  airport/airport_289.jpg | airport/airport_635.jpg
+  airport/airport_361.jpg | airport/airport_509.jpg
+  mountain/mountain_111.jpg | mountain/mountain_324.jpg
+  palace/palace_224.jpg | palace/palace_439.jpg
+  palace/palace_595.jpg | palace/palace_669.jpg
