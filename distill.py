@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from daten import lade_daten, transformationen
 from modelle import baue_modell, lade_checkpoint, speichere_checkpoint
-from werkzeuge import ausgabe_ordner, bester_checkpoint, csv_anhaengen, latenz_ms, setze_seed, waehle_geraet
+from werkzeuge import ausgabe_ordner, bester_checkpoint, csv_anhaengen, latenz_ms, setze_seed, vorhersagen, waehle_geraet
 
 
 def argumente():

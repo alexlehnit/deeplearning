@@ -81,3 +81,16 @@ def bester_checkpoint(ordner, methode="lora"):
         zeilen = [z for z in csv.DictReader(f)
                   if z["methode"] == methode and z["vortrainiert"] == "ja" and os.path.exists(z["checkpoint"])]
     return max(zeilen, key=lambda z: float(z["val_acc"]))["checkpoint"]
+
+def vorhersagen(modell, loader, geraet, vorverarbeitung=None):
+    """Gibt (wahre Labels, vorhergesagte Labels) zurück; vorverarbeitung z. B. Normierung für den Teacher."""
+    modell.eval()
+    alle_y, alle_p = [], []
+    with torch.no_grad():
+        for bilder, y in loader:
+            bilder = bilder.to(geraet)
+            if vorverarbeitung is not None:
+                bilder = vorverarbeitung(bilder)
+            alle_y += y.tolist()
+            alle_p += modell(bilder).argmax(1).cpu().tolist()
+    return alle_y, alle_p

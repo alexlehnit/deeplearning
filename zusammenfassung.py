@@ -81,7 +81,28 @@ def main():
                   tabelle(["Student", "Variante", "Seeds", "Test-Acc", "Macro-F1", "Parameter", "MB", "Latenz (ms)",
                            "Lücke geschlossen"], zeilen), ""]
 
-    # hier kommen in G7 und H6 die Blöcke für Station 2, Station 3 und den Vergleich hin
+    # Station 3
+    if s3:
+        zeilen = sorted(s3, key=lambda z: -float(z["test_acc"]))
+        teile += ["## Station 3: Generalization (CLIP Zero-Shot)", "",
+                  tabelle(["CLIP", "Gewichte", "Klassennamen", "Prompt", "Test-Acc", "Macro-F1"],
+                          [[z["modell"], z["pretrained"], z["namen"], z["prompt"], prozent(float(z["test_acc"])),
+                            prozent(float(z["test_f1"]))] for z in zeilen]), ""]
+        for modell, g in gruppieren(s3, ["modell"]).items():
+            b = max(g, key=lambda z: float(z["test_acc"]))
+            vergleich.append(("CLIP Zero-Shot", f"{modell[0]} ({b['namen']}, {b['prompt']})", "nein",
+                              float(b["test_acc"]), int(b["parameter_bild"]), b["latenz_ms"]))
+
+    # Gesamtvergleich: bestes Modell je Familie
+    if vergleich:
+        beste = {}
+        for v in vergleich:
+            if v[0] not in beste or v[3] > beste[v[0]][3]:
+                beste[v[0]] = v
+        teile += ["## Vergleich: Kann CLIP den ViT ersetzen?", "",
+                  tabelle(["Familie", "bestes Modell", "auf den Daten trainiert", "Test-Acc", "Parameter", "Latenz (ms)"],
+                          [[v[0], v[1], v[2], prozent(v[3]), f"{v[4]:,}", v[5]]
+                           for v in sorted(beste.values(), key=lambda v: -v[3])]), ""]
 
     text = "\n".join(teile)
     (ordner / "zusammenfassung.md").write_text(text)
