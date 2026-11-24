@@ -48,6 +48,7 @@ def main():
     beinahe = [g for h, g in nach_dhash.items() if len(g) > 1 and 4 <= bin(h).count("1") <= 60]
     widerspruch = {frozenset(g) for g in exakt + beinahe if len({p.parent.name for p in g}) > 1}
 
+    ziel = ordner.parent / f"{ordner.name}_aussortiert"
     zeilen = [
         f"Bilder: {len(dateien):,} in {len(pro_klasse)} Klassen",
         f"Bilder pro Klasse: min {min(pro_klasse.values())}, max {max(pro_klasse.values())}",
@@ -58,6 +59,7 @@ def main():
         f"Beinahe-Duplikate: {len(beinahe)} Gruppen",
         f"Widersprüchliche Labels: {len(widerspruch)} Gruppen",
         f"Sehr kontrastarme Bilder: {flach}",
+        f"Vor dieser Prüfung aussortiert: {len(list(ziel.glob('*/*')))} Dateien",
     ]
     if beinahe:
         zeilen += ["", "Beinahe-Duplikate (erste 30):"] + [
@@ -66,7 +68,7 @@ def main():
     ausgabe = Path("ausgaben") / ordner.name
     ausgabe.mkdir(parents=True, exist_ok=True)
     (ausgabe / "datenqualitaet.txt").write_text("\n".join(zeilen) + "\n")
-    print("\n".join(zeilen[:9]))
+    print("\n".join(zeilen[:10]))
 
     klassen = sorted(pro_klasse)
     plt.figure(figsize=(max(6, 0.22 * len(klassen)), 4))
@@ -82,9 +84,10 @@ def main():
         for g in exakt + (beinahe if args.beinahe_entfernen else []):
             if frozenset(g) not in widerspruch:
                 weg.update(g[1:])
-        ziel = ordner.parent / f"{ordner.name}_aussortiert"
         for p in sorted(weg):
             (ziel / p.parent.name).mkdir(parents=True, exist_ok=True)
+            # sonst lässt rename die Quelle liegen, wenn beide Hardlinks auf dieselbe Datei sind
+            (ziel / p.parent.name / p.name).unlink(missing_ok=True)
             shutil.move(str(p), ziel / p.parent.name / p.name)
         print(f"Bereinigt: {len(weg)} Dateien nach {ziel}/ verschoben.")
 

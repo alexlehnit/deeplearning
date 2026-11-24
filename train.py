@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from daten import lade_daten, transformationen
+from lora import lora_zusammenfuehren
 from modelle import baue_modell, speichere_checkpoint
 from werkzeuge import (anzahl_klassen, ausgabe_ordner, csv_anhaengen, konfusionsmatrix, latenz_ms,
                        setze_seed, waehle_geraet)
@@ -54,8 +55,8 @@ def auswerten(modell, loader, verlust_fn, geraet):
             alle_p += logits.argmax(1).cpu().tolist()
     return alle_y, alle_p, summe / len(alle_y)
 
-def trainiere_epoche(modell, loader, verlust_fn, optimizer, scheduler, geraet):
-    modell.train()
+def trainiere_epoche(modell, loader, verlust_fn, optimizer, scheduler, geraet, nur_kopf):
+    modell.train(not nur_kopf)  # bei lp auch die BatchNorm-Statistiken einfrieren
     summe, richtig, anzahl = 0.0, 0, 0
     for bilder, y in loader:
         bilder, y = bilder.to(geraet), y.to(geraet)
@@ -106,7 +107,8 @@ def main():
 
     beste_val_acc, beste_epoche, start = -1.0, 0, time.time()
     for epoche in range(1, args.epochen + 1):
-        train_verlust, train_acc = trainiere_epoche(modell, train_loader, verlust_fn, optimizer, scheduler, geraet)
+        train_verlust, train_acc = trainiere_epoche(modell, train_loader, verlust_fn, optimizer, scheduler, geraet,
+                                                    args.methode == "lp")
         val_y, val_p, val_verlust = auswerten(modell, val_loader, verlust_fn, geraet)
         val_acc = accuracy_score(val_y, val_p)
         print(f"Epoche {epoche}: Verlust {train_verlust:.4f} | Train-Acc {train_acc:.3f} "
@@ -125,6 +127,8 @@ def main():
     modell.load_state_dict(torch.load(checkpoint, map_location="cpu")["zustand"], strict=False)
     test_y, test_p, _ = auswerten(modell, test_loader, verlust_fn, geraet)
     test_acc, test_f1 = accuracy_score(test_y, test_p), f1_score(test_y, test_p, average="macro")
+    modell = lora_zusammenfuehren(modell)
+    gesamt = sum(p.numel() for p in modell.parameters())
     latenz = latenz_ms(modell.eval(), geraet, groesse)
     print(f"Test-Accuracy {test_acc:.4f} | Macro-F1 {test_f1:.4f} | Training {zeit:.0f} s | Latenz {latenz:.1f} ms/Bild")
 

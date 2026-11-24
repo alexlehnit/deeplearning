@@ -33,3 +33,22 @@ def lora_einbauen(modell, r=8, alpha=16, ziele=("qkv",)):
             eltern, name = ZIELE[ziel](block)
             setattr(eltern, name, LoRALinear(getattr(eltern, name), r=r, alpha=alpha))
     return modell
+
+
+def lora_zusammenfuehren(modell):
+    """Rechnet W + (alpha/r) * B @ A fest ein, damit Latenz und Parameter ohne LoRA-Zusatzaufwand gemessen werden."""
+    for eltern in list(modell.modules()):
+        for name, kind in list(eltern.named_children()):
+            if isinstance(kind, LoRALinear):
+                with torch.no_grad():
+                    kind.original.weight += kind.skalierung * (kind.B @ kind.A)
+                setattr(eltern, name, kind.original)
+    return modell
+
+
+if __name__ == "__main__":
+    test = nn.Sequential(LoRALinear(nn.Linear(5, 7)))
+    nn.init.normal_(test[0].B)
+    x = torch.randn(3, 5)
+    vorher = test(x)
+    assert torch.allclose(vorher, lora_zusammenfuehren(test)(x), atol=1e-5) and isinstance(test[0], nn.Linear)

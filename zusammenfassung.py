@@ -4,11 +4,12 @@ import statistics
 from pathlib import Path
 
 
-def lies(pfad):
+def lies(pfad, schluessel):
+    """Bei wiederholten Läufen (gleicher Schlüssel) zählt nur die letzte Zeile."""
     if not pfad.exists():
         return []
     with open(pfad) as f:
-        return list(csv.DictReader(f))
+        return list({tuple(z[k] for k in schluessel): z for z in csv.DictReader(f)}.values())
 
 
 def gruppieren(zeilen, schluessel):
@@ -37,7 +38,8 @@ def main():
     parser.add_argument("--daten", default="daten/resisc45")
     args = parser.parse_args()
     ordner = Path("ausgaben") / Path(args.daten).name
-    s1, s2, s3 = lies(ordner / "ergebnisse.csv"), lies(ordner / "ergebnisse_kd.csv"), lies(ordner / "ergebnisse_clip.csv")
+    s1, s2 = lies(ordner / "ergebnisse.csv", ["checkpoint"]), lies(ordner / "ergebnisse_kd.csv", ["checkpoint"])
+    s3 = lies(ordner / "ergebnisse_clip.csv", ["modell", "pretrained", "namen", "prompt"])
     teile = [f"# Ergebnisse: {Path(args.daten).name}", ""]
     vergleich = []
 
@@ -54,7 +56,8 @@ def main():
                                  f"{int(g[0]['trainierbar']):,}", f"{mittel(g, 'zeit_s')[0]:.0f}", g[0]["latenz_ms"]]))
             if k[4] == "ja":
                 familie = "ViT (Station 1)" if k[0].startswith(("vit", "deit")) else "CNN (Station 1)"
-                vergleich.append((familie, f"{name} {methode}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"]))
+                vergleich.append((familie, f"{name} {methode}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"],
+                                  mittel(g, "val_acc")[0]))
         teile += ["## Station 1: Adaptation", "",
                   tabelle(["Modell", "Methode", "lr", "Epochen", "Seeds", "Test-Acc", "Macro-F1", "trainierbar",
                            "Zeit (s)", "Latenz (ms)"],
@@ -74,7 +77,8 @@ def main():
             kd = "ohne KD" if k[1] == "nein" else f"KD α={k[2]}, T={k[3]}"
             zeilen.append([k[0], kd, len(g), prozent(acc, acc_s), prozent(mittel(g, "test_f1")[0]),
                            f"{int(g[0]['parameter']):,}", g[0]["groesse_mb"], g[0]["latenz_ms"], luecke])
-            vergleich.append(("Student (Station 2)", f"{k[0]} {kd}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"]))
+            vergleich.append(("Student (Station 2)", f"{k[0]} {kd}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"],
+                              mittel(g, "val_acc")[0]))
         teile += ["## Station 2: Compression", "",
                   f"Teacher: `{s2[0]['teacher']}`, Test-Acc {prozent(teacher_acc)}, "
                   f"{int(s2[0]['teacher_parameter']):,} Parameter, {s2[0]['teacher_latenz_ms']} ms pro Bild", "",
@@ -89,15 +93,16 @@ def main():
                           [[z["modell"], z["pretrained"], z["namen"], z["prompt"], prozent(float(z["test_acc"])),
                             prozent(float(z["test_f1"]))] for z in zeilen]), ""]
         for modell, g in gruppieren(s3, ["modell"]).items():
-            b = max(g, key=lambda z: float(z["test_acc"]))
+            b = max(g, key=lambda z: float(z["val_acc"]))
             vergleich.append(("CLIP Zero-Shot", f"{modell[0]} ({b['namen']}, {b['prompt']})", "nein",
-                              float(b["test_acc"]), int(b["parameter_bild"]), b["latenz_ms"]))
+                              float(b["test_acc"]), int(b["parameter_bild"]), b["latenz_ms"],
+                              float(b["val_acc"])))
 
-    # Gesamtvergleich: bestes Modell je Familie
+    # Gesamtvergleich: bestes Modell je Familie, ausgewählt nach Val-Accuracy
     if vergleich:
         beste = {}
         for v in vergleich:
-            if v[0] not in beste or v[3] > beste[v[0]][3]:
+            if v[0] not in beste or v[6] > beste[v[0]][6]:
                 beste[v[0]] = v
         teile += ["## Vergleich: Kann CLIP den ViT ersetzen?", "",
                   tabelle(["Familie", "bestes Modell", "auf den Daten trainiert", "Test-Acc", "Parameter", "Latenz (ms)"],

@@ -9,7 +9,7 @@ $BATCH = if ($env:BATCH) { $env:BATCH } else { 32 }
 if (-not (Test-Path -Path $DATEN -PathType Container)) {
     python daten_vorbereiten.py
 }
-python datenqualitaet.py --daten $DATEN
+python datenqualitaet.py --daten $DATEN --bereinigen
 
 # Hilfsfunktion als Ersatz für den Bash-Befehl $T
 function Invoke-Train {
@@ -35,8 +35,14 @@ Invoke-Train "--methode", "lora", "--rang", "8", "--lr", "5e-4", "--lora_ziele",
 
 Invoke-Train "--modell", "resnet50.a1_in1k", "--methode", "lp"
 Invoke-Train "--modell", "resnet50.tv_in1k", "--methode", "lp"
-Invoke-Train "--modell", "resnet50.a1_in1k", "--methode", "full", "--lr", "3e-4"
+foreach ($seed in 0, 1, 2) {
+    Invoke-Train "--modell", "resnet50.a1_in1k", "--methode", "full", "--lr", "3e-4", "--seed", "$seed"
+}
 Invoke-Train "--modell", "resnet50.tv_in1k", "--methode", "full", "--lr", "3e-4"
+
+foreach ($seed in 0, 1, 2) {
+    Invoke-Train "--methode", "full", "--lr", "3e-5", "--seed", "$seed"
+}
 
 Invoke-Train "--methode", "full", "--lr", "1e-4", "--ohne_vortraining"
 Invoke-Train "--modell", "resnet50.a1_in1k", "--methode", "full", "--lr", "1e-3", "--ohne_vortraining"

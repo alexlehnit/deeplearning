@@ -78,7 +78,8 @@ def konfusionsmatrix(wahr, vorhersage, klassen, pfad, titel=""):
 
 def bester_checkpoint(ordner, methode="lora"):
     with open(Path(ordner) / "ergebnisse.csv") as f:
-        zeilen = [z for z in csv.DictReader(f)
+        # wiederholte Läufe überschreiben den Checkpoint, also zählt nur ihre letzte Zeile
+        zeilen = [z for z in {z["checkpoint"]: z for z in csv.DictReader(f)}.values()
                   if z["methode"] == methode and z["vortrainiert"] == "ja" and os.path.exists(z["checkpoint"])]
     return max(zeilen, key=lambda z: float(z["val_acc"]))["checkpoint"]
 

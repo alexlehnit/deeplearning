@@ -44,7 +44,8 @@ def main():
             verlinken(p, ziel / klasse / p.name)
 
     meta = {"datensatz": "resisc45", "klassennamen": {k: k.replace("_", " ") for k in klassen},
-            }
+            "prompts": ["a satellite photo of {}.", "a centered satellite photo of {}.", "an aerial photo of {}.",
+                        "satellite imagery of {}.", "an overhead view of {}."]}
     with open(ziel / "meta.json", "w") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 

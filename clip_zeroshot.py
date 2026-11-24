@@ -29,7 +29,7 @@ def main():
     modell = modell.to(geraet).eval()
     parameter_bild = sum(p.numel() for p in modell.visual.parameters())
 
-    _, _, test_ds, klassen = lade_daten(args.daten, vorverarbeitung, vorverarbeitung)
+    _, val_ds, test_ds, klassen = lade_daten(args.daten, vorverarbeitung, vorverarbeitung)
     print(f"{len(test_ds):,} Testbilder, {len(klassen)} Klassen")
     meta = lade_meta(args.daten)
     namen_varianten = {"Ordnername": [lesbarer_name(k) for k in klassen]}
@@ -43,13 +43,17 @@ def main():
         "P3 Domäne-Ensemble": domaene,
     }
 
-    bild_merkmale, labels = [], []
-    with torch.no_grad():
-        for bilder, y in DataLoader(test_ds, batch_size=args.batch, num_workers=args.worker):
-            m = modell.encode_image(bilder.to(geraet))
-            bild_merkmale.append(m / m.norm(dim=-1, keepdim=True))
-            labels += y.tolist()
-    bild_merkmale = torch.cat(bild_merkmale)
+    def bild_merkmale(ds):
+        merkmale, labels = [], []
+        with torch.no_grad():
+            for bilder, y in DataLoader(ds, batch_size=args.batch, num_workers=args.worker):
+                m = modell.encode_image(bilder.to(geraet))
+                merkmale.append(m / m.norm(dim=-1, keepdim=True))
+                labels += y.tolist()
+        return torch.cat(merkmale), labels
+
+    val_merkmale, val_labels = bild_merkmale(val_ds)
+    test_merkmale, labels = bild_merkmale(test_ds)
 
     def text_merkmale(namen, vorlagen):
         ergebnis = []
@@ -66,16 +70,18 @@ def main():
     ergebnisse = []
     for namen_art, namen in namen_varianten.items():
         for prompt_name, vorlagen in prompts.items():
-            vorhersage = (bild_merkmale @ text_merkmale(namen, vorlagen).T).argmax(1).cpu().tolist()
+            text = text_merkmale(namen, vorlagen).T
+            val_acc = accuracy_score(val_labels, (val_merkmale @ text).argmax(1).cpu().tolist())
+            vorhersage = (test_merkmale @ text).argmax(1).cpu().tolist()
             acc, f1 = accuracy_score(labels, vorhersage), f1_score(labels, vorhersage, average="macro")
-            ergebnisse.append((namen_art, prompt_name, acc, f1, vorhersage))
+            ergebnisse.append((namen_art, prompt_name, acc, val_acc, vorhersage))
             print(f"{namen_art:12s} | {prompt_name:20s} | Accuracy {acc:.4f} | Macro-F1 {f1:.4f}")
             csv_anhaengen(ordner / "ergebnisse_clip.csv", dict(
                 modell=args.modell, pretrained=args.pretrained, namen=namen_art, prompt=prompt_name,
-                test_acc=round(acc, 4), test_f1=round(f1, 4), parameter_bild=parameter_bild,
+                val_acc=round(val_acc, 4), test_acc=round(acc, 4), test_f1=round(f1, 4), parameter_bild=parameter_bild,
                 latenz_ms=round(latenz, 2)))
 
-    bester = max(ergebnisse, key=lambda e: e[2])
+    bester = max(ergebnisse, key=lambda e: e[3])  # Auswahl nach Validierung, nicht nach Test
     titel = f"CLIP {args.modell}: {bester[0]}, {bester[1]}"
     konfusionsmatrix(labels, bester[4], klassen, ordner / "konfusion" / f"clip_{args.modell}.png", titel)
     print(f"Beste Variante: {bester[0]}, {bester[1]}, Accuracy {bester[2]:.4f} | Latenz {latenz:.1f} ms")

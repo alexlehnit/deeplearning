@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from daten import lade_daten, transformationen
+from lora import lora_zusammenfuehren
 from modelle import baue_modell, lade_checkpoint, speichere_checkpoint
 from werkzeuge import ausgabe_ordner, bester_checkpoint, csv_anhaengen, latenz_ms, setze_seed, vorhersagen, waehle_geraet
 
@@ -53,6 +54,7 @@ def main():
     # 1. Teacher
     teacher_pfad = args.teacher or bester_checkpoint(ordner, "lora")
     teacher, t_konfig = lade_checkpoint(teacher_pfad, geraet)
+    lora_zusammenfuehren(teacher)
     for p in teacher.parameters():
         p.requires_grad = False
 
@@ -93,7 +95,7 @@ def main():
         for bilder, y in train_loader:
             bilder, y = bilder.to(geraet), y.to(geraet)
             with torch.no_grad():
-                logits_t = teacher(fuer_teacher(bilder))
+                logits_t = teacher(fuer_teacher(bilder)) if args.alpha > 0 else None
             logits_s = student(bilder)
             verlust = kd_verlust(logits_s, logits_t, y, args.alpha, args.temperatur)
             optimizer.zero_grad()
