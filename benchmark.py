@@ -59,6 +59,7 @@ def warten(geraet):
         torch.cuda.synchronize()
 
 
+# Auf der CPU gibt es hier keinen sinnvollen Wert, deshalb nan
 def speicher_mb(geraet):
     if geraet.type == "mps":
         return torch.mps.driver_allocated_memory() / 2**20
@@ -91,6 +92,7 @@ def messen(name, args):
     optimizer = torch.optim.AdamW([p for p in modell.parameters() if p.requires_grad], lr=1e-4, weight_decay=0.01)
     verlust_fn = nn.CrossEntropyLoss()
     x = torch.randn(args.batch, 3, 224, 224, device=geraet)
+    # Zufallsdaten reichen, es geht nur um Zeit und Speicher
     y = torch.randint(0, 45, (args.batch,), device=geraet)
     if geraet.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
@@ -106,6 +108,7 @@ def messen(name, args):
         verlust.backward()
         optimizer.step()
         warten(geraet)
+        # Erste Schritte sind langsamer und zählen nicht mit
         if i >= args.aufwaermen:
             zeiten.append(time.perf_counter() - t0)
         peak = max(peak, speicher_mb(geraet))
@@ -142,6 +145,7 @@ def median_schreiben(pfad):
     with open(pfad) as f:
         for z in csv.DictReader(f):
             zeilen[z["konfig"]].append(z)
+    # Eigene Datei, damit die Rohwerte erhalten bleiben
     ziel = Path(pfad).with_name(Path(pfad).stem + "_median.csv")
     with open(ziel, "w", newline="") as f:
         w = csv.writer(f)
@@ -191,6 +195,7 @@ def main():
     for i in range(args.wiederholungen):
         for name in KONFIGS:
             print(f"\n=== {name} ({i + 1}/{args.wiederholungen})", flush=True)
+            # Jedes Modell in einem neuen Prozess, sonst bleibt Speicher vom vorigen belegt
             subprocess.run([sys.executable, __file__, "--nur", name] + weiter, check=True)
     median_schreiben(args.ziel)
 

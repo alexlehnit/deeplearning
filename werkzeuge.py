@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
 
+# Mac-GPU, NVIDIA oder CPU, je nachdem was der Rechner hat
 def waehle_geraet():
     if torch.backends.mps.is_available():
         return torch.device("mps")
@@ -19,6 +20,7 @@ def waehle_geraet():
     return torch.device("cpu")
 
 
+# Gleicher Seed, damit man Läufe wiederholen kann
 def setze_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -35,6 +37,7 @@ def anzahl_klassen(daten):
     return len([d for d in os.listdir(daten) if os.path.isdir(os.path.join(daten, d))])
 
 def csv_anhaengen(pfad, zeile):
+    # Kopfzeile nur schreiben, wenn es die Datei noch nicht gibt
     neu = not os.path.exists(pfad)
     with open(pfad, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(zeile.keys()))
@@ -45,6 +48,7 @@ def csv_anhaengen(pfad, zeile):
 def latenz_ms(vorwaerts, geraet, groesse=224, wiederholungen=50):
     bild = torch.randn(1, 3, groesse, groesse, device=geraet)
 
+    # Die GPU rechnet im Hintergrund weiter, ohne Warten wäre die Zeit zu kurz
     def warten():
         if geraet.type == "mps":
             torch.mps.synchronize()
@@ -58,8 +62,10 @@ def latenz_ms(vorwaerts, geraet, groesse=224, wiederholungen=50):
             t0 = time.perf_counter()
             vorwaerts(bild)
             warten()
+            # Die ersten 10 Durchläufe sind nur zum Aufwärmen
             if i >= 10:
                 zeiten.append((time.perf_counter() - t0) * 1000)
+    # Median statt Mittelwert, Ausreißer stören dann nicht so
     return sorted(zeiten)[len(zeiten) // 2]
 
 def konfusionsmatrix(wahr, vorhersage, klassen, pfad, titel=""):
@@ -81,6 +87,7 @@ def bester_checkpoint(ordner, methode="lora"):
         # wiederholte Läufe überschreiben den Checkpoint, also zählt nur ihre letzte Zeile
         zeilen = [z for z in {z["checkpoint"]: z for z in csv.DictReader(f)}.values()
                   if z["methode"] == methode and z["vortrainiert"] == "ja" and os.path.exists(z["checkpoint"])]
+    # Auswahl nach Validierung, der Testsatz bleibt außen vor
     return max(zeilen, key=lambda z: float(z["val_acc"]))["checkpoint"]
 
 def vorhersagen(modell, loader, geraet, vorverarbeitung=None):

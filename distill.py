@@ -13,7 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 from daten import lade_daten, transformationen
 from lora import lora_zusammenfuehren
 from modelle import baue_modell, lade_checkpoint, speichere_checkpoint
-from werkzeuge import ausgabe_ordner, bester_checkpoint, csv_anhaengen, latenz_ms, setze_seed, vorhersagen, waehle_geraet
+from werkzeuge import (ausgabe_ordner, bester_checkpoint, csv_anhaengen, konfusionsmatrix, latenz_ms, setze_seed,
+                       vorhersagen, waehle_geraet)
 
 
 def argumente():
@@ -32,13 +33,18 @@ def argumente():
 
 
 
+# Mischung aus normalem Verlust und Abstand zum Teacher.
+# alpha sagt, wie stark der Teacher zählt, bei 0 ist es normales Training.
 def kd_verlust(logits_s, logits_t, y, alpha, T):
     ce = F.cross_entropy(logits_s, y)
     if alpha == 0:
         return ce
+    # Hohe Temperatur macht die Verteilung weicher, so sieht der Student auch,
+    # welche Klassen der Teacher ähnlich findet. T * T gleicht die kleineren Gradienten aus.
     kd = F.kl_div(F.log_softmax(logits_s / T, dim=1), F.softmax(logits_t / T, dim=1), reduction="batchmean") * T * T
     return alpha * kd + (1 - alpha) * ce
 
+# Teacher und Student können anders normiert sein, hier wird umgerechnet
 def normierung_umrechnen(cfg_s, cfg_t, geraet):
     form = (1, 3, 1, 1)
     mean_s, std_s = torch.tensor(cfg_s["mean"]).view(form).to(geraet), torch.tensor(cfg_s["std"]).view(form).to(geraet)
@@ -52,10 +58,12 @@ def main():
     ordner = ausgabe_ordner(args.daten)
 
     # 1. Teacher
+    # Ohne Angabe nehmen wir den besten LoRA-Lauf aus Station 1
     teacher_pfad = args.teacher or bester_checkpoint(ordner, "lora")
     teacher, t_konfig = lade_checkpoint(teacher_pfad, geraet)
     lora_zusammenfuehren(teacher)
     for p in teacher.parameters():
+        # Der Teacher lernt nicht mehr mit
         p.requires_grad = False
 
     # 2. Student
@@ -67,6 +75,7 @@ def main():
     cfg_s, cfg_t = student.pretrained_cfg, teacher.pretrained_cfg
     train_tf, eval_tf = transformationen(cfg_s["mean"], cfg_s["std"], cfg_s["input_size"][-1])
     train_ds, val_ds, test_ds, klassen = lade_daten(args.daten, train_tf, eval_tf)
+    # Sonst würden die Ausgaben von Teacher und Student nicht zusammenpassen
     assert klassen == t_konfig["klassen"], "Teacher wurde auf anderen Klassen trainiert"
     fuer_teacher = normierung_umrechnen(cfg_s, cfg_t, geraet)
     train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=args.worker)
@@ -95,6 +104,7 @@ def main():
         for bilder, y in train_loader:
             bilder, y = bilder.to(geraet), y.to(geraet)
             with torch.no_grad():
+                # Teacher sieht genau dieselben Bilder, ohne KD wird er nicht gebraucht
                 logits_t = teacher(fuer_teacher(bilder)) if args.alpha > 0 else None
             logits_s = student(bilder)
             verlust = kd_verlust(logits_s, logits_t, y, args.alpha, args.temperatur)
@@ -112,15 +122,18 @@ def main():
             beste_val_acc = val_acc
             speichere_checkpoint(student, checkpoint, konfig)
     zeit = time.time() - start
-    writer.close()
 
     # 7. Test und CSV
+    # Für den Test wieder das beste Modell laden, nicht das letzte
     student.load_state_dict(torch.load(checkpoint, map_location="cpu")["zustand"])
     test_y, test_p = vorhersagen(student, test_loader, geraet)
     test_acc, test_f1 = accuracy_score(test_y, test_p), f1_score(test_y, test_p, average="macro")
     latenz_s = latenz_ms(student.eval(), geraet, cfg_s["input_size"][-1])
     latenz_t = latenz_ms(teacher, geraet, cfg_t["input_size"][-1])
     print(f"Student {test_acc:.4f} (Teacher {teacher_acc:.4f}) | Latenz {latenz_s:.1f} vs. {latenz_t:.1f} ms")
+    fig = konfusionsmatrix(test_y, test_p, klassen, ordner / "konfusion" / f"{lauf}.png", lauf)
+    writer.add_figure("Konfusionsmatrix (Test)", fig)
+    writer.close()
     csv_anhaengen(ordner / "ergebnisse_kd.csv", dict(
         student=args.student, kd="nein" if args.alpha == 0 else "ja", alpha=args.alpha, temperatur=args.temperatur,
         epochen=args.epochen, lr=args.lr, seed=args.seed, parameter=p_student, groesse_mb=round(p_student * 4 / 1e6, 1),

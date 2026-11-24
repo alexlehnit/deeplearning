@@ -223,3 +223,6 @@ daten
 *txt
 *png
 *.pt
+daten/
+ausgaben/
+archiv/

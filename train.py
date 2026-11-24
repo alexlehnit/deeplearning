@@ -35,6 +35,7 @@ def argumente():
 
 
 
+# Alle wichtigen Einstellungen in den Namen, sonst überschreiben sich Läufe
 def lauf_name(args):
     ziele = args.lora_ziele.split(",")
     name = f"{args.modell.replace('.', '-')}_{args.methode}"
@@ -44,6 +45,7 @@ def lauf_name(args):
         name += "_scratch"
     return name + f"_lr{args.lr:g}_ep{args.epochen}_s{args.seed}"
 
+# Für Val und Test: Labels, Vorhersagen und mittlerer Verlust
 def auswerten(modell, loader, verlust_fn, geraet):
     modell.eval()
     alle_y, alle_p, summe = [], [], 0.0
@@ -63,8 +65,10 @@ def trainiere_epoche(modell, loader, verlust_fn, optimizer, scheduler, geraet, n
         logits = modell(bilder)
         verlust = verlust_fn(logits, y)
         optimizer.zero_grad()
+        # Gradienten berechnen und Gewichte anpassen
         verlust.backward()
         optimizer.step()
+        # Lernrate sinkt nach jedem Batch, nicht erst nach der Epoche
         scheduler.step()
         summe += verlust.item() * len(y)
         richtig += (logits.argmax(1) == y).sum().item()
@@ -85,6 +89,7 @@ def main():
     gesamt = sum(p.numel() for p in modell.parameters())
     trainierbar = sum(p.numel() for p in modell.parameters() if p.requires_grad)
 
+    # Jedes Modell erwartet eine eigene Normierung, die steht in der timm-Konfig
     cfg = modell.pretrained_cfg
     groesse = cfg["input_size"][-1]
     train_tf, eval_tf = transformationen(cfg["mean"], cfg["std"], groesse)
@@ -97,6 +102,7 @@ def main():
     print(f"Bilder: {len(train_ds):,} Training, {len(val_ds):,} Validierung, {len(test_ds):,} Test")
 
     verlust_fn = nn.CrossEntropyLoss()
+    # Nur die Parameter übergeben, die wirklich trainiert werden
     optimizer = torch.optim.AdamW([p for p in modell.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochen * len(train_loader))
 
@@ -118,6 +124,7 @@ def main():
         writer.add_scalar("Accuracy/train", train_acc, epoche)
         writer.add_scalar("Accuracy/val", val_acc, epoche)
         writer.add_scalar("Lernrate", scheduler.get_last_lr()[0], epoche)
+        # Nur das beste Modell nach Val-Accuracy behalten
         if val_acc > beste_val_acc:
             beste_val_acc, beste_epoche = val_acc, epoche
             speichere_checkpoint(modell, checkpoint, konfig)
@@ -127,6 +134,7 @@ def main():
     modell.load_state_dict(torch.load(checkpoint, map_location="cpu")["zustand"], strict=False)
     test_y, test_p, _ = auswerten(modell, test_loader, verlust_fn, geraet)
     test_acc, test_f1 = accuracy_score(test_y, test_p), f1_score(test_y, test_p, average="macro")
+    # Vor der Latenzmessung zusammenführen, so würde man es auch einsetzen
     modell = lora_zusammenfuehren(modell)
     gesamt = sum(p.numel() for p in modell.parameters())
     latenz = latenz_ms(modell.eval(), geraet, groesse)

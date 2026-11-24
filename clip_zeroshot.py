@@ -24,11 +24,13 @@ def main():
     geraet = waehle_geraet()
     ordner = ausgabe_ordner(args.daten)
 
+    # CLIP wird hier nicht trainiert, nur ausgewertet
     modell, _, vorverarbeitung = open_clip.create_model_and_transforms(args.modell, pretrained=args.pretrained)
     tokenizer = open_clip.get_tokenizer(args.modell)
     modell = modell.to(geraet).eval()
     parameter_bild = sum(p.numel() for p in modell.visual.parameters())
 
+    # Gleicher Split wie in Station 1 und 2, aber mit der Vorverarbeitung von CLIP
     _, val_ds, test_ds, klassen = lade_daten(args.daten, vorverarbeitung, vorverarbeitung)
     print(f"{len(test_ds):,} Testbilder, {len(klassen)} Klassen")
     meta = lade_meta(args.daten)
@@ -36,6 +38,7 @@ def main():
     if meta.get("klassennamen"):
         namen_varianten["beschreibend"] = [meta["klassennamen"].get(k, lesbarer_name(k)) for k in klassen]
     domaene = meta.get("prompts", ["a photo of {}."])
+    # Vier Varianten, um zu sehen wie viel der Text ausmacht
     prompts = {
         "P0 nur Name": ["{}"],
         "P1 a photo of": ["a photo of a {}."],
@@ -48,6 +51,7 @@ def main():
         with torch.no_grad():
             for bilder, y in DataLoader(ds, batch_size=args.batch, num_workers=args.worker):
                 m = modell.encode_image(bilder.to(geraet))
+                # Auf Länge 1 bringen, dann ist das Skalarprodukt die Cosinus-Ähnlichkeit
                 merkmale.append(m / m.norm(dim=-1, keepdim=True))
                 labels += y.tolist()
         return torch.cat(merkmale), labels
@@ -55,6 +59,7 @@ def main():
     val_merkmale, val_labels = bild_merkmale(val_ds)
     test_merkmale, labels = bild_merkmale(test_ds)
 
+    # Pro Klasse ein Vektor, bei mehreren Vorlagen der Mittelwert
     def text_merkmale(namen, vorlagen):
         ergebnis = []
         with torch.no_grad():
@@ -70,6 +75,7 @@ def main():
     ergebnisse = []
     for namen_art, namen in namen_varianten.items():
         for prompt_name, vorlagen in prompts.items():
+            # Es gewinnt die Klasse, deren Text am besten zum Bild passt
             text = text_merkmale(namen, vorlagen).T
             val_acc = accuracy_score(val_labels, (val_merkmale @ text).argmax(1).cpu().tolist())
             vorhersage = (test_merkmale @ text).argmax(1).cpu().tolist()

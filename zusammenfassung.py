@@ -12,6 +12,7 @@ def lies(pfad, schluessel):
         return list({tuple(z[k] for k in schluessel): z for z in csv.DictReader(f)}.values())
 
 
+# Läufe mit gleichen Einstellungen zusammenfassen, übrig bleiben die Seeds
 def gruppieren(zeilen, schluessel):
     gruppen = {}
     for z in zeilen:
@@ -19,6 +20,7 @@ def gruppieren(zeilen, schluessel):
     return gruppen
 
 
+# Bei nur einem Lauf gibt es keine Streuung, dann 0
 def mittel(zeilen, spalte):
     werte = [float(z[spalte]) for z in zeilen]
     return statistics.mean(werte), (statistics.stdev(werte) if len(werte) > 1 else 0.0)
@@ -54,6 +56,7 @@ def main():
             methode = k[1] + (f" r={k[2]}" if k[1] == "lora" else "") + (f" [{k[3]}]" if k[3] not in ("", "qkv") else "")
             zeilen.append((acc, [name, methode, k[5], k[6], len(g), prozent(acc, acc_s), prozent(f1),
                                  f"{int(g[0]['trainierbar']):,}", f"{mittel(g, 'zeit_s')[0]:.0f}", g[0]["latenz_ms"]]))
+            # Ohne Vortraining ist nur ein Kontrollversuch und kommt nicht in den Vergleich
             if k[4] == "ja":
                 familie = "ViT (Station 1)" if k[0].startswith(("vit", "deit")) else "CNN (Station 1)"
                 vergleich.append((familie, f"{name} {methode}", "ja", acc, int(g[0]["parameter"]), g[0]["latenz_ms"],
@@ -71,6 +74,7 @@ def main():
         zeilen = []
         for k, g in gruppen.items():
             acc, acc_s = mittel(g, "test_acc")
+            # Wie viel vom Abstand zum Teacher holt der Student durch KD auf?
             luecke = ""
             if k[1] == "ja" and k[0] in ohne and teacher_acc > ohne[k[0]]:
                 luecke = f"{100 * (acc - ohne[k[0]]) / (teacher_acc - ohne[k[0]]):.0f} %"

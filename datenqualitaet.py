@@ -15,6 +15,8 @@ import shutil
 
 BILDENDUNGEN = {".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".tif", ".tiff", ".webp"}
 
+# Vergleicht Nachbarpixel (heller oder dunkler) und macht daraus 64 Bit.
+# Bilder, die fast gleich aussehen, bekommen denselben Hash.
 def dhash(bild, groesse=8):
     grau = np.asarray(bild.convert("L").resize((groesse + 1, groesse), Image.BILINEAR), dtype=np.int16)
     bits = (grau[:, 1:] > grau[:, :-1]).flatten()
@@ -32,6 +34,7 @@ def main():
     pro_klasse = Counter(p.parent.name for p in dateien)
     groessen, modi, defekt = Counter(), Counter(), []
     nach_md5, nach_dhash = defaultdict(list), defaultdict(list)
+    # Jedes Bild einmal öffnen, dabei fallen kaputte Dateien auf
     for p in dateien:
         try:
             with Image.open(p) as bild:
@@ -43,9 +46,12 @@ def main():
         except Exception as fehler:
             defekt.append((p, str(fehler)))
 
+    # Gleicher MD5 heißt: Datei ist Byte für Byte identisch
     exakt = [g for g in nach_md5.values() if len(g) > 1]
+    # Sehr einfarbige Bilder haben fast alle denselben Hash, deshalb extra zählen
     flach = sum(len(g) for h, g in nach_dhash.items() if bin(h).count("1") < 4 or bin(h).count("1") > 60)
     beinahe = [g for h, g in nach_dhash.items() if len(g) > 1 and 4 <= bin(h).count("1") <= 60]
+    # Gleiches Bild in zwei Klassen, da kann mindestens ein Label nicht stimmen
     widerspruch = {frozenset(g) for g in exakt + beinahe if len({p.parent.name for p in g}) > 1}
 
     ziel = ordner.parent / f"{ordner.name}_aussortiert"
@@ -79,11 +85,14 @@ def main():
     plt.savefig(ausgabe / "klassenverteilung.png", dpi=130)
     if args.bereinigen:
         weg = {p for p, _ in defekt}
+        # Bei widersprüchlichen Labels fliegen alle Bilder der Gruppe raus
         for g in widerspruch:
             weg.update(g)
         for g in exakt + (beinahe if args.beinahe_entfernen else []):
             if frozenset(g) not in widerspruch:
+                # Von Duplikaten bleibt das erste Bild drin
                 weg.update(g[1:])
+        # Nur verschieben, nicht löschen, falls man etwas zurückholen will
         for p in sorted(weg):
             (ziel / p.parent.name).mkdir(parents=True, exist_ok=True)
             # sonst lässt rename die Quelle liegen, wenn beide Hardlinks auf dieselbe Datei sind
